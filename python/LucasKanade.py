@@ -19,9 +19,9 @@ def LucasKanade(It, It1, rect):
     # put your implementation here
 
     # warp 
-    warp = np.array([[1, 0, p[0]],
-                     [0, 1, p[1]]])
-    img_warped = cv2.warpAffine(It1, warp, (1100, 1000))
+    # warp = np.array([[1, 0, p[0]],
+    #                  [0, 1, p[1]]])
+    # img_warped = cv2.warpAffine(It1, warp, (1100, 1000))
 
     # jacobian
     jacobian = np.array([[1, 0],
@@ -30,26 +30,25 @@ def LucasKanade(It, It1, rect):
     # RectBivariateSpline - interpolate
     x = np.arange(0, It.shape[1])
     y = np.arange(0, It.shape[0])
-    It_spline = RectBivariateSpline(y, x, It)       # interpolated = spline(indices[0], indices[1], grid=False)
-    warped_spline = RectBivariateSpline(y, x, img_warped)
+    It_spline = RectBivariateSpline(y, x, It)       # spline of template image
+    It1_spline = RectBivariateSpline(y, x, It1)     # spline of current image
 
     # unroll matrices into the right vectors
-    I = np.ndarray.flatten(warped_spline(np.arange(x1, x2+1), np.arange(y1, y2+1)))      # need to subtract with below, so should be same shape
-    T = np.ndarray.flatten(It_spline(np.arange(x1, x2+1), np.arange(y1, y2+1)))              # should just be rectangular portion of It image
+    x1_w, x2_w, y1_w, y2_w = x1 + p[0], x2 + p[0], y1 + p[1], y2 + p[1]
+    x_w_range = np.arange(x1_w, x2_w+1)
+    y_w_range = np.arange(y1_w, y2_w+1)
+
+    I_window = It1_spline(x_w_range, y_w_range)
+    T_window = It_spline(np.arange(x1, x2+1), np.arange(y1, y2+1))
+    I = np.ndarray.flatten(I_window)                # translating using shifted indices
+    T = np.ndarray.flatten(T_window)                # should just be rectangular portion of It image
 
     # image gradient
-    xs, ys = np.meshgrid(x, y)
-    I_x = warped_spline.ev(xs, ys, dx=1)    # image gradient, not spline
-    I_y = warped_spline.ev(xs, ys, dy=1)
+    xs, ys = np.meshgrid(x_w_range, y_w_range)      # coordinates in the window
+    I_x = It1_spline.ev(xs, ys, dx=1)               # image gradient over the window
+    I_y = It1_spline.ev(xs, ys, dy=1)
 
-    # said do not need to get spline again, but I_x is an ndarray, not a spline, how to access points in?
-    I_x_spline = RectBivariateSpline(y, x, I_x)
-    I_y_spline = RectBivariateSpline(y, x, I_y)
-
-    I_x = I_x_spline(np.arange(x1, x2+1), np.arange(y1, y2+1))  # get the points of interest
-    I_y = I_y_spline(np.arange(x1, x2+1), np.arange(y1, y2+1))
-
-    # unroll gradients
+    # unroll gradient matrices
     I_x = np.ndarray.flatten(I_x)
     I_y = np.ndarray.flatten(I_y)
     I_grad = np.stack((I_x, I_y), 1)
@@ -57,10 +56,15 @@ def LucasKanade(It, It1, rect):
     # error image
     b = T - I
 
+    # delta_p = 0
+    # iter = 0
+    # while delta_p < threshold or iter > maxIters:
     # calculate hessian, H
     J = np.matmul(I_grad, jacobian)
     H = np.matmul(np.transpose(J), J)
     delta_p = np.matmul(np.matmul(np.linalg.inv(H), np.transpose(J)), b)
     p = p + delta_p
+
+        # iter += 1
 
     return p
