@@ -18,53 +18,54 @@ def LucasKanade(It, It1, rect):
     x1,y1,x2,y2 = rect
     # put your implementation here
 
-    # warp 
-    # warp = np.array([[1, 0, p[0]],
-    #                  [0, 1, p[1]]])
-    # img_warped = cv2.warpAffine(It1, warp, (1100, 1000))
 
-    # jacobian
+    # the jacobian for translation matrix
     jacobian = np.array([[1, 0],
                          [0, 1]])
     
-    # RectBivariateSpline - interpolate
+    # interpolate both the input images
     x = np.arange(0, It.shape[1])
     y = np.arange(0, It.shape[0])
-    It_spline = RectBivariateSpline(y, x, It)       # spline of template image
-    It1_spline = RectBivariateSpline(y, x, It1)     # spline of current image
+    It_spline = RectBivariateSpline(x, y, It.T)           # spline of template image
+    It1_spline = RectBivariateSpline(x, y, It1.T)         # spline of current image
 
-    # unroll matrices into the right vectors
-    x1_w, x2_w, y1_w, y2_w = x1 + p[0], x2 + p[0], y1 + p[1], y2 + p[1]
-    x_w_range = np.arange(x1_w, x2_w+1)
-    y_w_range = np.arange(y1_w, y2_w+1)
+    x_range = np.arange(x1, x2)
+    y_range = np.arange(y1, y2)
+    xt, yt = np.meshgrid(x_range, y_range)                  # coordinates in the window
+    T_window = It_spline.ev(xt.flatten(), yt.flatten())     # required window from the template spline
+    T = T_window.flatten()                                  # turn into vector
 
-    I_window = It1_spline(x_w_range, y_w_range)
-    T_window = It_spline(np.arange(x1, x2+1), np.arange(y1, y2+1))
-    I = np.ndarray.flatten(I_window)                # translating using shifted indices
-    T = np.ndarray.flatten(T_window)                # should just be rectangular portion of It image
 
-    # image gradient
-    xs, ys = np.meshgrid(x_w_range, y_w_range)      # coordinates in the window
-    I_x = It1_spline.ev(xs, ys, dx=1)               # image gradient over the window
-    I_y = It1_spline.ev(xs, ys, dy=1)
 
-    # unroll gradient matrices
-    I_x = np.ndarray.flatten(I_x)
-    I_y = np.ndarray.flatten(I_y)
-    I_grad = np.stack((I_x, I_y), 1)
+    delta_p = np.array([0, 0])
+    iter = 0
+    while np.hypot(delta_p[0], delta_p[1]) < threshold or iter > maxIters:
+        # unroll matrices into the right vectors
+        x1_w, x2_w, y1_w, y2_w = x1 + p[0], x2 + p[0], y1 + p[1], y2 + p[1]
+        x_w_range = np.arange(x1_w, x2_w)
+        y_w_range = np.arange(y1_w, y2_w)
+        xi, yi = np.meshgrid(x_w_range, y_w_range)      # coordinates in the window
+        I_window = It1_spline.ev(xi, yi)
 
-    # error image
-    b = T - I
+        # image gradient
+        I_x = It1_spline.ev(xi, yi, dx=1)               # image gradient over the window
+        I_y = It1_spline.ev(xi, yi, dy=1)
 
-    # delta_p = 0
-    # iter = 0
-    # while delta_p < threshold or iter > maxIters:
-    # calculate hessian, H
-    J = np.matmul(I_grad, jacobian)
-    H = np.matmul(np.transpose(J), J)
-    delta_p = np.matmul(np.matmul(np.linalg.inv(H), np.transpose(J)), b)
-    p = p + delta_p
+        # unroll  matrices
+        I = I_window.flatten()                          # translating using shifted indices
+        I_x = I_x.flatten()
+        I_y = I_y.flatten()
+        I_grad = np.stack((I_x, I_y), 1)                # create gradient matrix
 
-        # iter += 1
+        # error image
+        b = T - I
+
+        # compute delta_p using lstsq
+        A = np.matmul(I_grad, jacobian)
+        delta_p = np.linalg.lstsq(A, b)[0]
+
+        p = p + delta_p
+
+        iter += 1
 
     return p
