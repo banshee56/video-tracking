@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.interpolate import RectBivariateSpline
-import cv2
 
 def LucasKanade(It, It1, rect):
     # Input: 
@@ -26,46 +25,53 @@ def LucasKanade(It, It1, rect):
     # interpolate both the input images
     x = np.arange(0, It.shape[1])
     y = np.arange(0, It.shape[0])
-    It_spline = RectBivariateSpline(x, y, It.T)           # spline of template image
-    It1_spline = RectBivariateSpline(x, y, It1.T)         # spline of current image
+    It_spline = RectBivariateSpline(x, y, It.T)                 # spline of template image
+    It1_spline = RectBivariateSpline(x, y, It1.T)               # spline of current image
 
-    x_range = np.arange(x1, x2)
-    y_range = np.arange(y1, y2)
-    xt, yt = np.meshgrid(x_range, y_range)                  # coordinates in the window
-    T_window = It_spline.ev(xt.flatten(), yt.flatten())     # required window from the template spline
-    T = T_window.flatten()                                  # turn into vector
+    # number of coordinate points to use when creating grid
+    x_samples = int(x2-x1)                                       
+    y_samples = int(y2-y1)
 
+    # create template
+    xt, yt = createGrid(x1, y1, x2, y2, x_samples, y_samples)   # creating points for grid
+    T_window = It_spline.ev(xt, yt)                             # required window from the template spline
+    T = T_window.flatten()                                      # turn into vector
 
-
-    delta_p = np.array([0, 0])
+    delta_p = np.array([2, 2])                                  # starting parameters > threshold to run the loop
     iter = 0
-    while np.hypot(delta_p[0], delta_p[1]) < threshold or iter > maxIters:
-        # unroll matrices into the right vectors
-        x1_w, x2_w, y1_w, y2_w = x1 + p[0], x2 + p[0], y1 + p[1], y2 + p[1]
-        x_w_range = np.arange(x1_w, x2_w)
-        y_w_range = np.arange(y1_w, y2_w)
-        xi, yi = np.meshgrid(x_w_range, y_w_range)      # coordinates in the window
-        I_window = It1_spline.ev(xi, yi)
+    while iter < maxIters and np.hypot(delta_p[0], delta_p[1]) > threshold:
+        # shift the coordiantes by translation parameters
+        shifted_x1, shifted_x2, shifted_y1, shifted_y2 = x1 + p[0], x2 + p[0], y1 + p[1], y2 + p[1]
 
-        # image gradient
-        I_x = It1_spline.ev(xi, yi, dx=1)               # image gradient over the window
-        I_y = It1_spline.ev(xi, yi, dy=1)
+        # create grid of translated points for the warped image
+        xi, yi = createGrid(shifted_x1, shifted_y1, shifted_x2, shifted_y2, x_samples, y_samples)
+        I = It1_spline.ev(xi, yi).flatten()                     # use .ev() to get values in warped image
 
-        # unroll  matrices
-        I = I_window.flatten()                          # translating using shifted indices
-        I_x = I_x.flatten()
-        I_y = I_y.flatten()
-        I_grad = np.stack((I_x, I_y), 1)                # create gradient matrix
+        # get image gradient using .ev() and unroll matrices
+        I_x = It1_spline.ev(xi, yi, dx=1).flatten()             # x derivative
+        I_y = It1_spline.ev(xi, yi, dy=1).flatten()             # y derivative
+        I_grad = np.stack((I_x, I_y), 1)                        # create gradient matrix
 
         # error image
         b = T - I
 
         # compute delta_p using lstsq
-        A = np.matmul(I_grad, jacobian)
-        delta_p = np.linalg.lstsq(A, b)[0]
-
+        H = np.matmul(I_grad, jacobian)                         # Hessian
+        delta_p = np.linalg.lstsq(H, b, rcond=None)[0]
         p = p + delta_p
 
         iter += 1
 
     return p
+
+# helper function to create grid of points between top left and bottom right corners of bounding box
+# returns grid of points to be used by RectBivariateSpline.ev()
+def createGrid(x1, y1, x2, y2, x_samples, y_samples):
+    # to get x and y points on grid, can be fractional
+    x_range = np.linspace(x1, x2, x_samples)
+    y_range = np.linspace(y1, y2, y_samples)
+
+    # creating points for grid
+    xi, yi = np.meshgrid(x_range, y_range)          
+
+    return xi, yi
