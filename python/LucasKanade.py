@@ -28,17 +28,17 @@ def LucasKanade(It, It1, rect):
     It_spline = RectBivariateSpline(x, y, It.T)                 # spline of template image
     It1_spline = RectBivariateSpline(x, y, It1.T)               # spline of current image
 
-    # number of coordinate points to use when creating grid
-    x_samples = int(x2-x1)                                       
+    # create grid of points for template
+    x_samples = int(x2-x1)                                      # number of coordinates for range of x values   
     y_samples = int(y2-y1)
+    xt, yt = createGrid(x1, y1, x2, y2, x_samples, y_samples)   # creating points for grid
 
     # create template
-    xt, yt = createGrid(x1, y1, x2, y2, x_samples, y_samples)   # creating points for grid
     T_window = It_spline.ev(xt, yt)                             # required window from the template spline
     T = T_window.flatten()                                      # turn into vector
 
     delta_p = np.array([2, 2])                                  # starting parameters > threshold to run the loop
-    iter = 0
+    iter = 0                                                    # number of iterations so far
     while iter < maxIters and np.hypot(delta_p[0], delta_p[1]) > threshold:
         # shift the coordiantes by translation parameters
         shifted_x1, shifted_x2, shifted_y1, shifted_y2 = x1 + p[0], x2 + p[0], y1 + p[1], y2 + p[1]
@@ -57,8 +57,8 @@ def LucasKanade(It, It1, rect):
 
         # compute delta_p using lstsq
         H = np.matmul(I_grad, jacobian)                         # Hessian
-        delta_p = np.linalg.lstsq(H, b, rcond=None)[0]
-        p = p + delta_p
+        delta_p = np.linalg.lstsq(H, b, rcond=None)[0]          # calculate least squares solution
+        p = p + delta_p                                         # update parameter
 
         iter += 1
 
