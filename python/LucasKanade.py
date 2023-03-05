@@ -39,12 +39,13 @@ def LucasKanade(It, It1, rect):
 
     delta_p = np.array([2, 2])                                  # starting parameters > threshold to run the loop
     iter = 0                                                    # number of iterations so far
-    while iter < maxIters and np.hypot(delta_p[0], delta_p[1]) > threshold:
+    # run until the magnitude of delta_p is greater than the threshold or until we reached maxIters
+    while np.hypot(delta_p[0], delta_p[1]) > threshold and iter < maxIters:
         # shift the coordiantes by translation parameters
-        shifted_x1, shifted_x2, shifted_y1, shifted_y2 = x1 + p[0], x2 + p[0], y1 + p[1], y2 + p[1]
+        warped_x1, warped_x2, warped_y1, warped_y2 = x1 + p[0], x2 + p[0], y1 + p[1], y2 + p[1]
 
         # create grid of translated points for the warped image
-        xi, yi = createGrid(shifted_x1, shifted_y1, shifted_x2, shifted_y2, x_samples, y_samples)
+        xi, yi = createGrid(warped_x1, warped_y1, warped_x2, warped_y2, x_samples, y_samples)
         I = It1_spline.ev(xi, yi).flatten()                     # use .ev() to get values in warped image
 
         # get image gradient using .ev() and unroll matrices
@@ -56,13 +57,15 @@ def LucasKanade(It, It1, rect):
         b = T - I
 
         # compute delta_p using lstsq
-        H = np.matmul(I_grad, jacobian)                         # Hessian
-        delta_p = np.linalg.lstsq(H, b, rcond=None)[0]          # calculate least squares solution
+        J = np.matmul(I_grad, jacobian)                         # Hessian
+        delta_p = np.linalg.lstsq(J, b, rcond=None)[0]          # calculate least squares solution
         p = p + delta_p                                         # update parameter
 
         iter += 1
 
     return p
+
+
 
 # helper function to create grid of points between top left and bottom right corners of bounding box
 # returns grid of points to be used by RectBivariateSpline.ev()

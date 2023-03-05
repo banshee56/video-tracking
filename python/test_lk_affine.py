@@ -29,7 +29,7 @@ rects = []
 rects.append(initial)
 fig = plt.figure(1)
 ax = fig.add_subplot(111)
-for i in range(numFrames-1):
+for i in range(1):
     print("frame****************", i)
     It = data[:,:,i]
     It1 = data[:,:,i+1]
