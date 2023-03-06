@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-from LucasKanadeAffine import LucasKanadeAffine
+from test import LucasKanadeAffine
 from file_utils import mkdir_if_missing
 
 data_name = 'landing'      # could choose from (car1, car2, landing) 
@@ -29,7 +29,7 @@ rects = []
 rects.append(initial)
 fig = plt.figure(1)
 ax = fig.add_subplot(111)
-for i in range(1):
+for i in range(numFrames-1):
     print("frame****************", i)
     It = data[:,:,i]
     It1 = data[:,:,i+1]

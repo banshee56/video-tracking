@@ -57,7 +57,7 @@ def LucasKanade(It, It1, rect):
         b = T - I
 
         # compute delta_p using lstsq
-        J = np.matmul(I_grad, jacobian)                         # Hessian
+        J = np.matmul(I_grad, jacobian)                         # Hessian = J.T @ J
         delta_p = np.linalg.lstsq(J, b, rcond=None)[0]          # calculate least squares solution
         p = p + delta_p                                         # update parameter
 
