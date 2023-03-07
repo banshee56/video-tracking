@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-from test import LucasKanadeAffine
+from LucasKanadeAffine import LucasKanadeAffine
 from file_utils import mkdir_if_missing
 
 data_name = 'landing'      # could choose from (car1, car2, landing) 

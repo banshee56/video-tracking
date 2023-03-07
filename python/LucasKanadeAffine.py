@@ -15,64 +15,69 @@ def LucasKanadeAffine(It, It1, rect):
     maxIters = 100
     p = np.zeros((6,1))
     x1,y1,x2,y2 = rect
-    print(rect)
+    print('rect', rect)
     # put your implementation here
     
+    img = It1
+    template = It
     # interpolate both the input images
-    x = np.arange(0, It.shape[1])
-    y = np.arange(0, It.shape[0])
-    It_spline = RectBivariateSpline(x, y, It.T)                 # spline of template image
-    It1_spline = RectBivariateSpline(x, y, It1.T)               # spline of current image
+    x = np.arange(0, img.shape[1])
+    y = np.arange(0, img.shape[0])
+    template_spline = RectBivariateSpline(x, y, template.T)     # spline of template image
+    img_spline = RectBivariateSpline(x, y, img.T)
 
-   # create grid of points on image
-    x_samples = int(x2-x1)                                      # number of coordinates for range of x values
-    y_samples = int(y2-y1)
-    xt, yt = createGrid(x1, y1, x2, y2, x_samples, y_samples)   # creating points for grid
+    # create grid of points on image
+    xt, yt = createGrid(x1, y1, x2, y2)         # creating grid for rect
+    T = template_spline.ev(xt, yt).flatten()                    # getting template points over rect
 
-    # create template
-    T_window = It_spline.ev(xt, yt)                             # required window from the template spline
-    T = T_window.flatten()                                      # turn into vector
-
+    jacobian = getJacobian(xt, yt)  # shape (7200, 2, 6)
     delta_p = np.array([1, 1, 1, 1, 1, 1])                      # starting parameters > threshold to run the loop
     iter = 0                                                    # number of iterations so far
+    
     # run until the magnitude of delta_p is greater than the threshold or until we reached maxIters
-    while np.linalg.norm(delta_p) > threshold and iter < maxIters:
+    while np.linalg.norm(delta_p) >= threshold and iter < maxIters:
         # shift the coordiantes by affine parameters
-        warped_x1 = (p[0]+1.0)*x1 + p[1]*y1     + p[2]
-        warped_y1 = p[3]*x1     + (p[4]+1.0)*y1 + p[5]
-        warped_x2 = (p[0]+1.0)*x2 + p[1]*y2     + p[2]
-        warped_y2 = p[3]*x2     + (p[4]+1.0)*y2 + p[5]
+        M = np.array([[1.0+p[0], p[2],    p[4]],
+                      [p[1],    1.0+p[3], p[5]]]).reshape((2, 3))
+        
+        # create spline for the full warped image
+        points = np.stack((xt.flatten(), yt.flatten(), np.ones((xt.ravel().shape))))
+        warped_points = M @ points
+        xi = warped_points[0].reshape(xt.shape)
+        yi = warped_points[1].reshape(yt.shape)
 
-        # create grid of translated points for the warped image
-        xi, yi = createGrid(warped_x1, warped_y1, warped_x2, warped_y2, x_samples, y_samples)
-        I = It1_spline.ev(xi, yi).flatten()                     # use .ev() to get values in warped image
+        I = img_spline.ev(xi, yi).flatten()                     # use .ev() to get rect values in warped image
 
         # get image gradient using .ev() and unroll matrices
-        I_x = It1_spline.ev(xi, yi, dx=1).flatten()             # x derivative
-        I_y = It1_spline.ev(xi, yi, dy=1).flatten()             # y derivative
+        I_x = img_spline.ev(xi, yi, dx=1).flatten()             # x derivative
+        I_y = img_spline.ev(xi, yi, dy=1).flatten()             # y derivative
 
         # reshape
-        I_x = I_x.reshape((I_x.shape[0], 1))
-        I_y = I_y.reshape((I_y.shape[0], 1))
-        I_grad = np.stack((I_x, I_y), 2)                        # create gradient matrix
+        I_x = np.expand_dims(I_x, 1)                            # changing shape from (7200,) to (7200, 1)
+        I_y = np.expand_dims(I_y, 1)
+        I_grad = np.stack((I_x, I_y), 2)                        # create gradient matrix, shape (7200, 1, 2)
 
         # error image
-        b = T - I
+        error_img = (T - I).reshape((T.shape[0], 1, 1))         # shape (7200,)
 
         # compute delta_p using lstsq
-        jacobian = getJacobian(xi, yi)
-        J = np.matmul(I_grad, jacobian)                         # J
-        J = np.reshape(J, (J.shape[0], J.shape[2]))
+        J = np.matmul(I_grad, jacobian)                         # J, (7200, 1, 2) x (7200, 2, 6) = (7200, 1, 6)
+        # print(np.transpose(J, (0, 2, 1)).shape)
+        # print(J.shape)
+        H = np.transpose(J, (0, 2, 1)) @ J
+        H = np.sum(H, 0)
+        b = np.transpose(J, (0, 2, 1)) @ error_img
+        b = np.sum(b, 0)
 
-        delta_p = np.linalg.lstsq(J, b, rcond=None)[0]          # calculate least squares solution
-        delta_p = np.reshape(delta_p, (6, 1))
+        delta_p = np.linalg.lstsq(H, b, rcond=None)[0].reshape((6, 1))          # calculate least squares solution
         p = p + delta_p                                         # update parameter
 
         iter += 1
 
     # reshape the output affine matrix
-    M = np.array([[1.0+p[0], p[1],    p[2]],
-                  [p[3],    1.0+p[4], p[5]]]).reshape(2, 3)
+    M = np.array([[1.0+p[0], p[2],    p[4]],
+                      [p[1],    1.0+p[3], p[5]]]).reshape((2, 3))
+        
 
     return M
 
@@ -80,17 +85,15 @@ def LucasKanadeAffine(It, It1, rect):
 
 # helper function to create grid of points between top left and bottom right corners of bounding box
 # returns grid of points to be used by RectBivariateSpline.ev()
-def createGrid(x1, y1, x2, y2, x_samples, y_samples):
+def createGrid(x1, y1, x2, y2):
     # to get x and y points on grid, can be fractional
-    x_range = np.linspace(x1, x2, x_samples)
-    y_range = np.linspace(y1, y2, y_samples)
+    x_range = np.arange(x1, x2+1, 1)
+    y_range = np.arange(y1, y2+1, 1)
 
     # creating points for grid
     xi, yi = np.meshgrid(x_range, y_range)          
 
     return xi, yi
-
-
 
 def getJacobian(xt, yt):
     # create jacobian

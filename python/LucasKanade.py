@@ -29,9 +29,7 @@ def LucasKanade(It, It1, rect):
     It1_spline = RectBivariateSpline(x, y, It1.T)               # spline of current image
 
     # create grid of points for template
-    x_samples = int(x2-x1)                                      # number of coordinates for range of x values   
-    y_samples = int(y2-y1)
-    xt, yt = createGrid(x1, y1, x2, y2, x_samples, y_samples)   # creating points for grid
+    xt, yt = createGrid(x1, y1, x2, y2)   # creating points for grid
 
     # create template
     T_window = It_spline.ev(xt, yt)                             # required window from the template spline
@@ -40,12 +38,10 @@ def LucasKanade(It, It1, rect):
     delta_p = np.array([2, 2])                                  # starting parameters > threshold to run the loop
     iter = 0                                                    # number of iterations so far
     # run until the magnitude of delta_p is greater than the threshold or until we reached maxIters
-    while np.hypot(delta_p[0], delta_p[1]) > threshold and iter < maxIters:
+    while np.hypot(delta_p[0], delta_p[1]) >= threshold and iter < maxIters:
         # shift the coordiantes by translation parameters
-        warped_x1, warped_x2, warped_y1, warped_y2 = x1 + p[0], x2 + p[0], y1 + p[1], y2 + p[1]
-
         # create grid of translated points for the warped image
-        xi, yi = createGrid(warped_x1, warped_y1, warped_x2, warped_y2, x_samples, y_samples)
+        xi, yi = xt + p[0], yt + p[1]
         I = It1_spline.ev(xi, yi).flatten()                     # use .ev() to get values in warped image
 
         # get image gradient using .ev() and unroll matrices
@@ -69,10 +65,10 @@ def LucasKanade(It, It1, rect):
 
 # helper function to create grid of points between top left and bottom right corners of bounding box
 # returns grid of points to be used by RectBivariateSpline.ev()
-def createGrid(x1, y1, x2, y2, x_samples, y_samples):
+def createGrid(x1, y1, x2, y2):
     # to get x and y points on grid, can be fractional
-    x_range = np.linspace(x1, x2, x_samples)
-    y_range = np.linspace(y1, y2, y_samples)
+    x_range = np.arange(x1, x2+1, 1)
+    y_range = np.arange(y1, y2+1, 1)
 
     # creating points for grid
     xi, yi = np.meshgrid(x_range, y_range)          

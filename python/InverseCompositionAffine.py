@@ -17,78 +17,84 @@ def InverseCompositionAffine(It, It1, rect):
     x1,y1,x2,y2 = rect
 
     # put your implementation here
-    # x = np.arange(0, It.shape[0])
-    # y = np.arange(0, It.shape[1])
-    # T = RectBivariateSpline(x, y, It)
-    # I = RectBivariateSpline(x, y, It1)
+    print('rect', rect)
+    ###### precomputations
+    ### template gradient
+    # variables
+    template = It
+    img = It1
+    x = np.arange(0, template.shape[1])
+    y = np.arange(0, template.shape[0])
+    T_spline = RectBivariateSpline(x, y, template.T)
+    img_spline = RectBivariateSpline(x, y, img.T)
 
-    # I_x, I_y = np.gradient(It1)
+    # get template T from the rect portion of image
+    xt, yt = createGrid(x1, y1, x2, y2)
+    T = T_spline.ev(xt, yt).flatten()
 
-    x = np.arange(0, It.shape[1])
-    y = np.arange(0, It.shape[0])
-    It_spline = RectBivariateSpline(x, y, It.T)                 # spline of template image
-    It1_spline = RectBivariateSpline(x, y, It1.T)               # spline of current image
+    # template gradient
+    T_x = T_spline.ev(xt, yt, dx=1).flatten()
+    T_y = T_spline.ev(xt, yt, dy=1).flatten()
+    T_grad = np.vstack((T_x, T_y)).reshape((T_x.shape[0], 1, 2))
 
-   # create grid of points on image
-    x_samples = int(x2-x1)                                      # number of coordinates for range of x values
-    y_samples = int(y2-y1)
-    xt, yt = createGrid(x1, y1, x2, y2, x_samples, y_samples)   # creating points for grid
+    # jacobian wrt W(x;0)
+    jacobian = getJacobian(xt, yt)
 
-    # create template
-    T_window = It_spline.ev(xt, yt)                             # required window from the template spline
-    T = T_window.flatten()                                      # turn into vector
+    # Hessian
+    J = T_grad @ jacobian
+    H = np.transpose(J, (0, 2, 1)) @ J
+    H = np.sum(H, 0)                                            # number of iterations so far
 
-    delta_p = np.array([2, 2])                                  # starting parameters > threshold to run the loop
-    iter = 0                                                    # number of iterations so far
     # run until the magnitude of delta_p is greater than the threshold or until we reached maxIters
-    while np.hypot(delta_p[0], delta_p[1]) > threshold and iter < maxIters:
+    delta_p = np.array([1, 1, 1, 1, 1, 1])                      # starting parameters > threshold to run the loop
+    iter = 0
+    M = np.array([[1.0+p[0], p[2],    p[4]],
+                  [p[1],    1.0+p[3], p[5]]]).reshape((2, 3))
+    M = np.vstack((M, np.array([0, 0, 1]))).reshape((3, 3))
+    
+    while np.linalg.norm(delta_p) >= threshold and iter < maxIters:
         # shift the coordiantes by affine parameters
-        warped_x1 = (p[0]+1)*x1 + p[1]*y1     + p[2]
-        warped_y1 = p[3]*x1     + (p[4]+1)*y1 + p[5]
-        warped_x2 = (p[0]+1)*x2 + p[1]*y2     + p[2]
-        warped_y2 = p[3]*x2     + (p[4]+1)*y2 + p[5]
+        # create spline for the full warped image
+        points = np.stack((xt.flatten(), yt.flatten(), np.ones((xt.ravel().shape))))
+        warped_points = M @ points
+        xi = warped_points[0].reshape(xt.shape)
+        yi = warped_points[1].reshape(yt.shape)
 
-        # create grid of translated points for the warped image
-        xi, yi = createGrid(warped_x1, warped_y1, warped_x2, warped_y2, x_samples, y_samples)
-        I = It1_spline.ev(xi, yi).flatten()                     # use .ev() to get values in warped image
-
-        # get image gradient using .ev() and unroll matrices
-        I_x = It1_spline.ev(xi, yi, dx=1).flatten()             # x derivative
-        I_y = It1_spline.ev(xi, yi, dy=1).flatten()             # y derivative
-
-        # reshape
-        I_x = I_x.reshape((I_x.shape[0], 1))
-        I_y = I_y.reshape((I_y.shape[0], 1))
-        I_grad = np.stack((I_x, I_y), 2)                        # create gradient matrix
+        I = img_spline.ev(xi, yi).flatten()                     # use .ev() to get rect values in warped image
 
         # error image
-        b = T - I
+        error_img = (I - T).reshape((I.shape[0], 1, 1))         # shape (7200,)
 
         # compute delta_p using lstsq
-        jacobian = getJacobian(xi, yi)
-        J = np.matmul(I_grad, jacobian)                         # J
-        J = np.reshape(J, (J.shape[0], J.shape[2]))
+        b = np.transpose(J, (0, 2, 1)) @ error_img
+        b = np.sum(b, 0)
+        print(b.shape)
 
-        delta_p = np.linalg.lstsq(J, b, rcond=None)[0]          # calculate least squares solution
-        delta_p = np.reshape(delta_p, (6, 1))
-        p = p + delta_p                                         # update parameter
+        delta_p = np.linalg.lstsq(H, b, rcond=None)[0]          # calculate least squares solution
+
+        # update warp 
+        # W(x;p) o W(x;delta_p)^{-1} = W(p) * W(delta_p) * x
+        W_delta_p = np.array([[1.0+delta_p[0], delta_p[2],    delta_p[4]],
+                              [delta_p[1],    1.0+delta_p[3], delta_p[5]]]).reshape((2, 3))
+        W_delta_p = np.vstack((W_delta_p, np.array([0, 0, 1])))
+        M = M @ np.linalg.inv(W_delta_p)
 
         iter += 1
 
     # reshape the output affine matrix
-    M = np.array([[1.0+p[0], p[1],    p[2]],
-                  [p[3],    1.0+p[4], p[5]]]).reshape(2, 3)
-
+    # M = np.array([[1.0+p[0], p[2],    p[4]],
+    #                   [p[1],    1.0+p[3], p[5]]]).reshape((2, 3))
+    M = M[0:2, :]
     return M
 
 
 
 # helper function to create grid of points between top left and bottom right corners of bounding box
 # returns grid of points to be used by RectBivariateSpline.ev()
-def createGrid(x1, y1, x2, y2, x_samples, y_samples):
+def createGrid(x1, y1, x2, y2):
     # to get x and y points on grid, can be fractional
-    x_range = np.linspace(x1, x2, x_samples)
-    y_range = np.linspace(y1, y2, y_samples)
+    x_range = np.arange(x1, x2+1, 1)
+    y_range = np.arange(y1, y2+1, 1)
 
     # creating points for grid
     xi, yi = np.meshgrid(x_range, y_range)          
@@ -111,12 +117,3 @@ def getJacobian(xt, yt):
                                 [0, xt[i], 0, yt[i], 0, 1]])
 
     return jacobian
-
-
-
-
-    # reshape the output affine matrix
-    M = np.array([[1.0+p[0], p[1],    p[2]],
-                 [p[3],     1.0+p[4], p[5]]]).reshape(2, 3)
-
-    return M
