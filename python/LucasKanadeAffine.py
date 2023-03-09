@@ -27,30 +27,30 @@ def LucasKanadeAffine(It, It1, rect):
     img_spline = RectBivariateSpline(x, y, img.T)
 
     # create grid of points on image
-    xt, yt = createGrid(x1, y1, x2, y2)         # creating grid for rect
-    T = template_spline.ev(xt, yt).flatten()                    # getting template points over rect
+    xt, yt = createGrid(x1, y1, x2, y2)                         # creating grid for rect
+    T = template_spline.ev(xt, yt).ravel()                    # getting template points over rect
 
-    jacobian = getJacobian(xt.ravel(), yt.ravel())  # shape (7200, 2, 6)
+    jacobian = getJacobian(xt.ravel(), yt.ravel())              # shape (7200, 2, 6)
     delta_p = np.array([1, 1, 1, 1, 1, 1])                      # starting parameters > threshold to run the loop
     iter = 0                                                    # number of iterations so far
     
     # run until the magnitude of delta_p is greater than the threshold or until we reached maxIters
     while np.linalg.norm(delta_p) >= threshold and iter < maxIters:
-        # shift the coordiantes by affine parameters
+        # warp the coordiantes by affine parameters
         M = np.array([[1.0+p[0], p[2],    p[4]],
                       [p[1],    1.0+p[3], p[5]]]).reshape((2, 3))
         
         # create spline for the full warped image
-        points = np.stack((xt.flatten(), yt.flatten(), np.ones((xt.ravel().shape))))
+        points = np.stack((xt.ravel(), yt.ravel(), np.ones((xt.ravel().shape))))
         warped_points = M @ points
         xi = warped_points[0].reshape(xt.shape)
         yi = warped_points[1].reshape(yt.shape)
 
-        I = img_spline.ev(xi, yi).flatten()                     # use .ev() to get rect values in warped image
+        I = img_spline.ev(xi, yi).ravel()                     # use .ev() to get rect values in warped image
 
         # get image gradient using .ev() and unroll matrices
-        I_x = img_spline.ev(xi, yi, dx=1).flatten()             # x derivative
-        I_y = img_spline.ev(xi, yi, dy=1).flatten()             # y derivative
+        I_x = img_spline.ev(xi, yi, dx=1).ravel()             # x derivative
+        I_y = img_spline.ev(xi, yi, dy=1).ravel()             # y derivative
 
         # reshape
         I_x = np.expand_dims(I_x, 1)                            # changing shape from (7200,) to (7200, 1)
@@ -62,15 +62,17 @@ def LucasKanadeAffine(It, It1, rect):
 
         # compute delta_p using lstsq
         J = np.matmul(I_grad, jacobian)                         # J, (7200, 1, 2) x (7200, 2, 6) = (7200, 1, 6)
-        # print(np.transpose(J, (0, 2, 1)).shape)
-        # print(J.shape)
+
+        # compute Hessian
         H = np.transpose(J, (0, 2, 1)) @ J
         H = np.sum(H, 0)
+
+        # setup for lstsq
         b = np.transpose(J, (0, 2, 1)) @ error_img
         b = np.sum(b, 0)
 
         delta_p = np.linalg.lstsq(H, b, rcond=None)[0].reshape((6, 1))          # calculate least squares solution
-        p = p + delta_p                                         # update parameter
+        p = p + delta_p                                                         # update parameter
 
         iter += 1
 

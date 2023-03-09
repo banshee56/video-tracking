@@ -52,13 +52,16 @@ def InverseCompositionAffine(It, It1, rect):
     iter = 0                    # iteration
     delta_p_norm = threshold+1  # starting value of delta_p
     M = np.eye(3)
-    # orig points to warp
+    # creating homogenous points of the original points to warp
     points = np.vstack((xt.ravel(), yt.ravel(), np.ones(xt.ravel().shape[0])))
+    
     while delta_p_norm >= threshold and iter < maxIters:
+        # warp the coordiantes by affine parameters
         warped_points = M @ points
         xi, yi = warped_points[0], warped_points[1]
         I = It1_spline.ev(xi, yi).ravel()
-
+        
+        # compute error image
         err_img = (I - T).reshape(T.shape[0], 1, 1)   
 
         # least squares solution setup
@@ -67,9 +70,12 @@ def InverseCompositionAffine(It, It1, rect):
         delta_p = np.linalg.lstsq(H, b, rcond=None)[0].reshape((6, 1))  
         delta_p_norm = np.linalg.norm(delta_p)
 
+        # delta_p warp
         W = np.array([[1.0 + delta_p[0], delta_p[2], delta_p[4]],
                       [delta_p[1], 1.0 + delta_p[3], delta_p[5]]]).reshape((2, 3))
         W = np.vstack((W, np.array([0, 0, 1])))
+
+        # compute new warp M
         M = np.dot(M, np.linalg.inv(W))
 
         iter += 1
