@@ -18,73 +18,63 @@ def InverseCompositionAffine(It, It1, rect):
 
     # put your implementation here
     print('rect', rect)
-    ###### precomputations
-    ### template gradient
+    ### precomputations
     # variables
-    template = It
-    img = It1
-    x = np.arange(0, template.shape[1])
-    y = np.arange(0, template.shape[0])
-    T_spline = RectBivariateSpline(x, y, template.T)
-    img_spline = RectBivariateSpline(x, y, img.T)
+    # range of values for full image to create splines
+    x = np.arange(0, It.shape[1])
+    y = np.arange(0, It.shape[0])
 
-    # get template T from the rect portion of image
+    # image spline to compute intensity of warped points
+    It1_spline = RectBivariateSpline(x, y, It1.T)
+    It_spline = RectBivariateSpline(x, y, It.T)
+
+    # meshgrid results to evaluate rect in spline
     xt, yt = createGrid(x1, y1, x2, y2)
-    T = T_spline.ev(xt, yt).flatten()
 
     # template gradient
-    T_x = T_spline.ev(xt, yt, dx=1).flatten()
-    T_y = T_spline.ev(xt, yt, dy=1).flatten()
-    T_grad = np.vstack((T_x, T_y)).reshape((T_x.shape[0], 1, 2))
+    T = It_spline.ev(xt, yt).ravel()
+    T_x = It_spline.ev(xt, yt, dx=1).ravel()
+    T_y = It_spline.ev(xt, yt, dy=1).ravel()
+    # reshape to get correct shape for T_grad
+    T_x = np.expand_dims(T_x, 1)                            # changing shape from (7200,) to (7200, 1)
+    T_y = np.expand_dims(T_y, 1)
+    T_grad = np.stack((T_x, T_y), 2)       
 
-    # jacobian wrt W(x;0)
-    jacobian = getJacobian(xt, yt)
+    # jacobian
+    jacobian = getJacobian(xt.ravel(), yt.ravel())
 
-    # Hessian
+    # hessian
     J = T_grad @ jacobian
     H = np.transpose(J, (0, 2, 1)) @ J
-    H = np.sum(H, 0)                                            # number of iterations so far
+    H = np.sum(H, 0)
 
-    # run until the magnitude of delta_p is greater than the threshold or until we reached maxIters
-    delta_p = np.array([1, 1, 1, 1, 1, 1])                      # starting parameters > threshold to run the loop
-    iter = 0
-    M = np.array([[1.0+p[0], p[2],    p[4]],
-                  [p[1],    1.0+p[3], p[5]]]).reshape((2, 3))
-    M = np.vstack((M, np.array([0, 0, 1]))).reshape((3, 3))
-    
-    while np.linalg.norm(delta_p) >= threshold and iter < maxIters:
-        # shift the coordiantes by affine parameters
-        # create spline for the full warped image
-        points = np.stack((xt.flatten(), yt.flatten(), np.ones((xt.ravel().shape))))
+    # start loop
+    iter = 0                    # iteration
+    delta_p_norm = threshold+1  # starting value of delta_p
+    M = np.eye(3)
+    # orig points to warp
+    points = np.vstack((xt.ravel(), yt.ravel(), np.ones(xt.ravel().shape[0])))
+    while delta_p_norm >= threshold and iter < maxIters:
         warped_points = M @ points
-        xi = warped_points[0].reshape(xt.shape)
-        yi = warped_points[1].reshape(yt.shape)
+        xi, yi = warped_points[0], warped_points[1]
+        I = It1_spline.ev(xi, yi).ravel()
 
-        I = img_spline.ev(xi, yi).flatten()                     # use .ev() to get rect values in warped image
+        err_img = (I - T).reshape(T.shape[0], 1, 1)   
 
-        # error image
-        error_img = (I - T).reshape((I.shape[0], 1, 1))         # shape (7200,)
-
-        # compute delta_p using lstsq
-        b = np.transpose(J, (0, 2, 1)) @ error_img
+        # least squares solution setup
+        b = np.transpose(J, (0, 2, 1)) @ err_img
         b = np.sum(b, 0)
-        print(b.shape)
+        delta_p = np.linalg.lstsq(H, b, rcond=None)[0].reshape((6, 1))  
+        delta_p_norm = np.linalg.norm(delta_p)
 
-        delta_p = np.linalg.lstsq(H, b, rcond=None)[0]          # calculate least squares solution
-
-        # update warp 
-        # W(x;p) o W(x;delta_p)^{-1} = W(p) * W(delta_p) * x
-        W_delta_p = np.array([[1.0+delta_p[0], delta_p[2],    delta_p[4]],
-                              [delta_p[1],    1.0+delta_p[3], delta_p[5]]]).reshape((2, 3))
-        W_delta_p = np.vstack((W_delta_p, np.array([0, 0, 1])))
-        M = M @ np.linalg.inv(W_delta_p)
+        W = np.array([[1.0 + delta_p[0], delta_p[2], delta_p[4]],
+                      [delta_p[1], 1.0 + delta_p[3], delta_p[5]]]).reshape((2, 3))
+        W = np.vstack((W, np.array([0, 0, 1])))
+        M = np.dot(M, np.linalg.inv(W))
 
         iter += 1
-
-    # reshape the output affine matrix
-    # M = np.array([[1.0+p[0], p[2],    p[4]],
-    #                   [p[1],    1.0+p[3], p[5]]]).reshape((2, 3))
-    M = M[0:2, :]
+    
+    M = M[0: 2, :]
     return M
 
 
@@ -97,23 +87,24 @@ def createGrid(x1, y1, x2, y2):
     y_range = np.arange(y1, y2+1, 1)
 
     # creating points for grid
-    xi, yi = np.meshgrid(x_range, y_range)          
+    xi, yi = np.meshgrid(x_range, y_range)     
 
     return xi, yi
 
 
-
 def getJacobian(xt, yt):
     # create jacobian
-    n = xt.shape[0]*xt.shape[1]
-    jacobian = np.zeros((n, 2, 6))           # x[0]*x[1] x coordiantes, same for y coordiantes, so x[0]*x[1] length of jacobian for all coordinates
+    n = 2*xt.shape[0]
+    jacobian = np.zeros((n, 6))           # x[0]*x[1] x coordiantes, same for y coordiantes, so x[0]*x[1] length of jacobian for all coordinates
 
     # jacobian = np.array([[xt, 0, yt, 0, 1, 0],
     #                      [0, xt, 0, yt, 0, 1]])
-    xt = xt.flatten()
-    yt = yt.flatten()
-    for i in range(n):
-        jacobian[i] = np.array([[xt[i], 0, yt[i], 0, 1, 0],
-                                [0, xt[i], 0, yt[i], 0, 1]])
+    jacobian[np.arange(0, n, 2), 0] = xt
+    jacobian[np.arange(0, n, 2), 2] = yt
+    jacobian[np.arange(0, n, 2), 4] = 1
 
-    return jacobian
+    jacobian[np.arange(1, n, 2), 1] = xt
+    jacobian[np.arange(1, n, 2), 3] = yt
+    jacobian[np.arange(1, n, 2), 5] = 1
+
+    return jacobian.reshape(int(n/2), 2, 6)

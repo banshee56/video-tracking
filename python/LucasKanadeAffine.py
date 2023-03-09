@@ -30,7 +30,7 @@ def LucasKanadeAffine(It, It1, rect):
     xt, yt = createGrid(x1, y1, x2, y2)         # creating grid for rect
     T = template_spline.ev(xt, yt).flatten()                    # getting template points over rect
 
-    jacobian = getJacobian(xt, yt)  # shape (7200, 2, 6)
+    jacobian = getJacobian(xt.ravel(), yt.ravel())  # shape (7200, 2, 6)
     delta_p = np.array([1, 1, 1, 1, 1, 1])                      # starting parameters > threshold to run the loop
     iter = 0                                                    # number of iterations so far
     
@@ -97,15 +97,17 @@ def createGrid(x1, y1, x2, y2):
 
 def getJacobian(xt, yt):
     # create jacobian
-    n = xt.shape[0]*xt.shape[1]
-    jacobian = np.zeros((n, 2, 6))           # x[0]*x[1] x coordiantes, same for y coordiantes, so x[0]*x[1] length of jacobian for all coordinates
+    n = 2*xt.shape[0]
+    jacobian = np.zeros((n, 6))           # x[0]*x[1] x coordiantes, same for y coordiantes, so x[0]*x[1] length of jacobian for all coordinates
 
     # jacobian = np.array([[xt, 0, yt, 0, 1, 0],
     #                      [0, xt, 0, yt, 0, 1]])
-    xt = xt.flatten()
-    yt = yt.flatten()
-    for i in range(n):
-        jacobian[i] = np.array([[xt[i], 0, yt[i], 0, 1, 0],
-                                [0, xt[i], 0, yt[i], 0, 1]])
+    jacobian[np.arange(0, n, 2), 0] = xt
+    jacobian[np.arange(0, n, 2), 2] = yt
+    jacobian[np.arange(0, n, 2), 4] = 1
 
-    return jacobian
+    jacobian[np.arange(1, n, 2), 1] = xt
+    jacobian[np.arange(1, n, 2), 3] = yt
+    jacobian[np.arange(1, n, 2), 5] = 1
+
+    return jacobian.reshape(int(n/2), 2, 6)
