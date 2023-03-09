@@ -28,9 +28,10 @@ def LucasKanadeAffine(It, It1, rect):
 
     # create grid of points on image
     xt, yt = createGrid(x1, y1, x2, y2)                         # creating grid for rect
-    T = template_spline.ev(xt, yt).ravel()                    # getting template points over rect
+    xt, yt = xt.ravel(), yt.ravel()
+    T = template_spline.ev(xt, yt)                              # getting template points over rect
 
-    jacobian = getJacobian(xt.ravel(), yt.ravel())              # shape (7200, 2, 6)
+    jacobian = getJacobian(xt, yt)                              # shape (7200, 2, 6)
     delta_p = np.array([1, 1, 1, 1, 1, 1])                      # starting parameters > threshold to run the loop
     iter = 0                                                    # number of iterations so far
     
@@ -41,16 +42,16 @@ def LucasKanadeAffine(It, It1, rect):
                       [p[1],    1.0+p[3], p[5]]]).reshape((2, 3))
         
         # create spline for the full warped image
-        points = np.stack((xt.ravel(), yt.ravel(), np.ones((xt.ravel().shape))))
+        points = np.stack((xt, yt, np.ones((xt.shape))))
         warped_points = M @ points
         xi = warped_points[0].reshape(xt.shape)
         yi = warped_points[1].reshape(yt.shape)
 
-        I = img_spline.ev(xi, yi).ravel()                     # use .ev() to get rect values in warped image
+        I = img_spline.ev(xi, yi)                               # use .ev() to get rect values in warped image
 
         # get image gradient using .ev() and unroll matrices
-        I_x = img_spline.ev(xi, yi, dx=1).ravel()             # x derivative
-        I_y = img_spline.ev(xi, yi, dy=1).ravel()             # y derivative
+        I_x = img_spline.ev(xi, yi, dx=1)                       # x derivative
+        I_y = img_spline.ev(xi, yi, dy=1)                       # y derivative
 
         # reshape
         I_x = np.expand_dims(I_x, 1)                            # changing shape from (7200,) to (7200, 1)

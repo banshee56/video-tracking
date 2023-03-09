@@ -30,10 +30,11 @@ def LucasKanade(It, It1, rect):
 
     # create grid of points for template
     xt, yt = createGrid(x1, y1, x2, y2)   # creating points for grid
+    xt, yt = xt.ravel(), yt.ravel()
 
     # create template
     T_window = It_spline.ev(xt, yt)                             # required window from the template spline
-    T = T_window.ravel()                                      # turn into vector
+    T = T_window                                                # turn into vector
 
     delta_p = np.array([2, 2])                                  # starting parameters > threshold to run the loop
     iter = 0                                                    # number of iterations so far
@@ -42,11 +43,11 @@ def LucasKanade(It, It1, rect):
         # shift the coordiantes by translation parameters
         # create grid of translated points for the warped image
         xi, yi = xt + p[0], yt + p[1]
-        I = It1_spline.ev(xi, yi).ravel()                     # use .ev() to get values in warped image
+        I = It1_spline.ev(xi, yi)                               # use .ev() to get values in warped image
 
         # get image gradient using .ev() and unroll matrices
-        I_x = It1_spline.ev(xi, yi, dx=1).ravel()             # x derivative
-        I_y = It1_spline.ev(xi, yi, dy=1).ravel()             # y derivative
+        I_x = It1_spline.ev(xi, yi, dx=1)                       # x derivative
+        I_y = It1_spline.ev(xi, yi, dy=1)                       # y derivative
         I_grad = np.stack((I_x, I_y), 1)                        # create gradient matrix
 
         # error image

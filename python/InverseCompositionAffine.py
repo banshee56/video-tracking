@@ -30,18 +30,19 @@ def InverseCompositionAffine(It, It1, rect):
 
     # meshgrid results to evaluate rect in spline
     xt, yt = createGrid(x1, y1, x2, y2)
+    xt, yt = xt.ravel(), yt.ravel()
 
     # template gradient
-    T = It_spline.ev(xt, yt).ravel()
-    T_x = It_spline.ev(xt, yt, dx=1).ravel()
-    T_y = It_spline.ev(xt, yt, dy=1).ravel()
+    T = It_spline.ev(xt, yt)
+    T_x = It_spline.ev(xt, yt, dx=1)
+    T_y = It_spline.ev(xt, yt, dy=1)
     # reshape to get correct shape for T_grad
     T_x = np.expand_dims(T_x, 1)                            # changing shape from (7200,) to (7200, 1)
     T_y = np.expand_dims(T_y, 1)
     T_grad = np.stack((T_x, T_y), 2)       
 
     # jacobian
-    jacobian = getJacobian(xt.ravel(), yt.ravel())
+    jacobian = getJacobian(xt, yt)
 
     # hessian
     J = T_grad @ jacobian
@@ -53,13 +54,13 @@ def InverseCompositionAffine(It, It1, rect):
     delta_p_norm = threshold+1  # starting value of delta_p
     M = np.eye(3)
     # creating homogenous points of the original points to warp
-    points = np.vstack((xt.ravel(), yt.ravel(), np.ones(xt.ravel().shape[0])))
+    points = np.vstack((xt, yt, np.ones(xt.shape[0])))
     
     while delta_p_norm >= threshold and iter < maxIters:
         # warp the coordiantes by affine parameters
         warped_points = M @ points
         xi, yi = warped_points[0], warped_points[1]
-        I = It1_spline.ev(xi, yi).ravel()
+        I = It1_spline.ev(xi, yi)
         
         # compute error image
         err_img = (I - T).reshape(T.shape[0], 1, 1)   
