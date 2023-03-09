@@ -48,6 +48,7 @@ def InverseCompositionAffine(It, It1, rect):
     J = T_grad @ jacobian
     H = np.transpose(J, (0, 2, 1)) @ J
     H = np.sum(H, 0)
+    H_inv = np.linalg.pinv(H)
 
     # start loop
     iter = 0                    # iteration
@@ -70,7 +71,7 @@ def InverseCompositionAffine(It, It1, rect):
         b = b.sum(0)
 
         # compute delta_p and its norm value
-        delta_p = np.linalg.pinv(H) @ b
+        delta_p = H_inv @ b
         delta_p_norm = np.linalg.norm(delta_p)
 
         # delta_p warp

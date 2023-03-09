@@ -72,7 +72,10 @@ def LucasKanadeAffine(It, It1, rect):
         b = np.transpose(J, (0, 2, 1)) @ error_img
         b = np.sum(b, 0)
 
-        delta_p = np.linalg.lstsq(H, b, rcond=None)[0].reshape((6, 1))          # calculate least squares solution
+        # compute delta_p
+        delta_p = np.linalg.pinv(H) @ b
+
+        # delta_p = np.linalg.lstsq(H, b, rcond=None)[0].reshape((6, 1))          # calculate least squares solution
         p = p + delta_p                                                         # update parameter
 
         iter += 1
