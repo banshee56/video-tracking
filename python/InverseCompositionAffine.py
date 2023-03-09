@@ -67,8 +67,10 @@ def InverseCompositionAffine(It, It1, rect):
 
         # least squares solution setup
         b = np.transpose(J, (0, 2, 1)) @ err_img
-        b = np.sum(b, 0)
-        delta_p = np.linalg.lstsq(H, b, rcond=None)[0].reshape((6, 1))  
+        b = b.sum(0)
+
+        # compute delta_p and its norm value
+        delta_p = np.linalg.pinv(H) @ b
         delta_p_norm = np.linalg.norm(delta_p)
 
         # delta_p warp
